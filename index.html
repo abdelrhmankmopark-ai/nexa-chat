@@ -1,33 +1,84 @@
-<!DOCTYPE html><html lang="ar" dir="rtl">
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101a35">
     <title>NEXA CHAT</title>
     <link rel="stylesheet" href="style.css">
 </head>
-<body><div class="app">
+<body>
+
+<div class="app">
+
     <header>
         <h1>NEXA <span>CHAT</span></h1>
-        <p>تواصل بلا حدود</p>
+        <p>تواصل بلا حدود 💎</p>
     </header>
 
-    <div class="search">
-        <input type="text" placeholder="ابحث عن محادثة...">
-    </div>
+    <section id="authSection">
 
-    <section class="chats">
-        <h3>المحادثات</h3>
         <div class="empty">
             <div class="icon">💬</div>
-            <h2>أهلاً بك في NEXA</h2>
-            <p>ابدأ رحلتك في التواصل مع أصدقائك.</p>
+            <h2>مرحباً بك في NEXA</h2>
+            <p>عالم جديد من التواصل يبدأ هنا.</p>
         </div>
+
+        <div class="auth-box">
+            <h2 id="formTitle">إنشاء حساب</h2>
+
+            <form id="authForm">
+
+                <input
+                    type="email"
+                    id="email"
+                    placeholder="البريد الإلكتروني"
+                    required
+                >
+
+                <input
+                    type="password"
+                    id="password"
+                    placeholder="كلمة المرور (6 أحرف على الأقل)"
+                    minlength="6"
+                    required
+                >
+
+                <button type="submit" id="submitBtn">
+                    إنشاء حساب
+                </button>
+
+            </form>
+
+            <p id="toggleText">
+                لديك حساب بالفعل؟
+                <a href="#" id="toggleAuth">تسجيل الدخول</a>
+            </p>
+
+            <p id="message"></p>
+        </div>
+
     </section>
 
-    <button class="new-chat">+ محادثة جديدة</button>
+    <section id="chatSection" hidden>
+
+        <h2>أهلاً بك في NEXA CHAT 🎉</h2>
+
+        <p id="userEmail"></p>
+
+        <div class="empty">
+            <div class="icon">💬</div>
+            <h2>محادثاتك</h2>
+            <p>قريباً ستبدأ محادثاتك مع أصدقائك هنا.</p>
+        </div>
+
+        <button id="logoutBtn">تسجيل الخروج</button>
+
+    </section>
+
 </div>
 
-<script src="script.js"></script>
+<script type="module" src="script.js"></script>
 
 </body>
 </html>
