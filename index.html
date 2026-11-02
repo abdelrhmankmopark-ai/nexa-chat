@@ -3,7 +3,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#101a35">
-    <meta name="description" content="NEXA CHAT - تواصل مع أصدقائك بسهولة">
+    <meta name="description" content="NEXA CHAT - تواصل مع أصدقائك">
     <title>NEXA CHAT</title>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -12,6 +12,7 @@
     <p>تواصل بلا حدود 💎</p>
 </header>
 
+<!-- تسجيل الدخول -->
 <section id="authSection">
 
     <div class="empty">
@@ -21,7 +22,6 @@
     </div>
 
     <div class="auth-box">
-
         <h2 id="formTitle">إنشاء حساب</h2>
 
         <form id="authForm">
@@ -65,26 +65,78 @@
         </p>
 
         <p id="message" role="status" aria-live="polite"></p>
-
     </div>
 
 </section>
 
+<!-- التطبيق بعد تسجيل الدخول -->
 <section id="chatSection" hidden>
 
-    <h2>أهلاً بك في NEXA CHAT 🎉</h2>
-
-    <p id="userEmail"></p>
-
-    <div class="empty">
-        <div class="icon">💬</div>
-        <h2>محادثاتك</h2>
-        <p>قريباً ستبدأ محادثاتك مع أصدقائك هنا.</p>
+    <div class="profile-bar">
+        <h2>أهلاً بك في NEXA 💎</h2>
+        <p id="userEmail"></p>
+        <button id="logoutBtn" type="button">تسجيل الخروج</button>
     </div>
 
-    <button id="logoutBtn" type="button">
-        تسجيل الخروج
-    </button>
+    <!-- البحث -->
+    <div class="search-box">
+        <h3>ابحث عن أصدقائك 🔎</h3>
+
+        <form id="searchForm">
+            <input
+                type="text"
+                id="searchUsername"
+                placeholder="اكتب اسم المستخدم..."
+                minlength="3"
+                required
+            >
+
+            <button type="submit" id="searchBtn">
+                بحث
+            </button>
+        </form>
+
+        <div id="searchResults"></div>
+    </div>
+
+    <!-- المحادثات -->
+    <div class="conversations-box">
+        <h3>محادثاتي 💬</h3>
+        <div id="conversationsList">
+            <p>جاري تحميل المحادثات...</p>
+        </div>
+    </div>
+
+    <!-- نافذة المحادثة -->
+    <div id="activeChat" hidden>
+
+        <div class="chat-header">
+            <button id="backBtn" type="button">رجوع</button>
+            <h3 id="chatTitle">المحادثة</h3>
+        </div>
+
+        <div id="chatMessages" aria-live="polite">
+            <p>ابدأ المحادثة الآن 👋</p>
+        </div>
+
+        <form id="sendMessageForm">
+            <input
+                type="text"
+                id="messageInput"
+                placeholder="اكتب رسالتك..."
+                maxlength="2000"
+                autocomplete="off"
+                required
+            >
+
+            <button type="submit" id="sendBtn">
+                إرسال
+            </button>
+        </form>
+
+        <p id="chatStatus" role="status"></p>
+
+    </div>
 
 </section>
 
