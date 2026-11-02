@@ -13,11 +13,22 @@ import {
 getFirestore,
 doc,
 setDoc,
-serverTimestamp
+serverTimestamp,
+collection,
+query,
+where,
+orderBy,
+startAt,
+endAt,
+limit,
+getDocs,
+getDoc,
+addDoc,
+onSnapshot
 } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-firestore.js";
 
 const firebaseConfig = {
-apiKey: "AIzaSyAEd46Utjpx_4veEwUow1crIgVPCiUvykM",
+apiKey: "AIzaSyAEd46Utjpx_4veEwUow1crIgVPCiUvyk",
 authDomain: "nexa-chat-3fa17.firebaseapp.com",
 projectId: "nexa-chat-3fa17",
 storageBucket: "nexa-chat-3fa17.firebasestorage.app",
@@ -30,24 +41,51 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 let isRegister = true;
+let currentUser = null;
+let activeChatId = null;
+let stopChatsListener = null;
+let stopMessagesListener = null;
 
-const authForm = document.getElementById("authForm");
-const formTitle = document.getElementById("formTitle");
-const submitBtn = document.getElementById("submitBtn");
-const toggleText = document.getElementById("toggleText");
-const message = document.getElementById("message");
+const $ = id => document.getElementById(id);
 
-const usernameInput = document.getElementById("username");
-const emailInput = document.getElementById("email");
-const passwordInput = document.getElementById("password");
+const authForm = $("authForm");
+const formTitle = $("formTitle");
+const submitBtn = $("submitBtn");
+const toggleText = $("toggleText");
+const message = $("message");
 
-const authSection = document.getElementById("authSection");
-const chatSection = document.getElementById("chatSection");
-const userEmail = document.getElementById("userEmail");
+const usernameInput = $("username");
+const emailInput = $("email");
+const passwordInput = $("password");
 
-function renderAuthMode() {
-formTitle.textContent = isRegister ? "إنشاء حساب" : "تسجيل الدخول";
-submitBtn.textContent = isRegister ? "إنشاء حساب" : "دخول";
+const authSection = $("authSection");
+const chatSection = $("chatSection");
+const userEmail = $("userEmail");
+
+const searchForm = $("searchForm");
+const searchUsername = $("searchUsername");
+const searchBtn = $("searchBtn");
+const searchResults = $("searchResults");
+
+const conversationsList = $("conversationsList");
+const activeChat = $("activeChat");
+const chatTitle = $("chatTitle");
+const chatMessages = $("chatMessages");
+const sendMessageForm = $("sendMessageForm");
+const messageInput = $("messageInput");
+const sendBtn = $("sendBtn");
+const chatStatus = $("chatStatus");
+const backBtn = $("backBtn");
+
+// تبديل التسجيل والدخول
+function showAuthMode() {
+formTitle.textContent = isRegister
+? "إنشاء حساب"
+: "تسجيل الدخول";
+
+submitBtn.textContent = isRegister
+    ? "إنشاء حساب"
+    : "دخول";
 
 usernameInput.hidden = !isRegister;
 usernameInput.required = isRegister;
@@ -60,18 +98,19 @@ toggleText.innerHTML = isRegister
     ? 'لديك حساب بالفعل؟ <a href="#" id="toggleAuth">تسجيل الدخول</a>'
     : 'ليس لديك حساب؟ <a href="#" id="toggleAuth">إنشاء حساب</a>';
 
-document.getElementById("toggleAuth").addEventListener("click", (event) => {
+$("toggleAuth").addEventListener("click", event => {
     event.preventDefault();
     isRegister = !isRegister;
     message.textContent = "";
-    renderAuthMode();
+    showAuthMode();
 });
 
 }
 
-renderAuthMode();
+showAuthMode();
 
-authForm.addEventListener("submit", async (event) => {
+// التسجيل والدخول
+authForm.addEventListener("submit", async event => {
 event.preventDefault();
 
 const email = emailInput.value.trim();
@@ -99,7 +138,7 @@ try {
 
         await setDoc(doc(db, "users", credential.user.uid), {
             uid: credential.user.uid,
-            username: username,
+            username,
             usernameLower: username.toLowerCase(),
             createdAt: serverTimestamp()
         });
@@ -112,15 +151,15 @@ try {
     }
 
 } catch (error) {
-    console.error("NEXA Error:", error);
+    console.error(error);
 
     const errors = {
-        "auth/email-already-in-use": "هذا البريد الإلكتروني مستخدم بالفعل.",
+        "auth/email-already-in-use": "البريد الإلكتروني مستخدم بالفعل.",
         "auth/invalid-email": "البريد الإلكتروني غير صحيح.",
         "auth/weak-password": "كلمة المرور يجب أن تكون 6 أحرف على الأقل.",
-        "auth/invalid-credential": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+        "auth/invalid-credential": "بيانات الدخول غير صحيحة.",
         "auth/network-request-failed": "تحقق من اتصال الإنترنت.",
-        "permission-denied": "تعذر حفظ بيانات المستخدم. تحقق من قواعد Firebase."
+        "permission-denied": "تعذر الوصول إلى قاعدة البيانات. راجع قواعد Firestore."
     };
 
     message.textContent =
@@ -132,26 +171,329 @@ try {
 
 });
 
-document.getElementById("logoutBtn").addEventListener("click", async () => {
+// تسجيل الخروج
+$("logoutBtn").addEventListener("click", async () => {
 try {
 await signOut(auth);
 } catch (error) {
-console.error(error);
-message.textContent = "تعذر تسجيل الخروج.";
+chatStatus.textContent = "تعذر تسجيل الخروج.";
 }
 });
 
-onAuthStateChanged(auth, (user) => {
-if (user) {
-authSection.hidden = true;
-chatSection.hidden = false;
+// إنشاء زر آمن
+function makeButton(label, className, onClick) {
+const button = document.createElement("button");
+button.type = "button";
+button.className = className;
+button.textContent = label;
+button.addEventListener("click", onClick);
+return button;
+}
 
-    userEmail.textContent = user.displayName || "مستخدم NEXA";
+// البحث عن المستخدمين
+async function searchUsers(term) {
+const normalized = term.trim().toLowerCase();
+
+if (normalized.length < 3) {
+    searchResults.textContent = "اكتب 3 أحرف على الأقل.";
+    return;
+}
+
+searchBtn.disabled = true;
+searchResults.textContent = "جاري البحث...";
+
+try {
+    const usersQuery = query(
+        collection(db, "users"),
+        orderBy("usernameLower"),
+        startAt(normalized),
+        endAt(normalized + "\uf8ff"),
+        limit(10)
+    );
+
+    const result = await getDocs(usersQuery);
+
+    searchResults.replaceChildren();
+
+    const matches = result.docs.filter(
+        item => item.id !== currentUser.uid
+    );
+
+    if (matches.length === 0) {
+        searchResults.textContent = "لم نعثر على مستخدم بهذا الاسم.";
+        return;
+    }
+
+    matches.forEach(item => {
+        const data = item.data();
+
+        const row = document.createElement("div");
+        row.className = "user-result";
+
+        const name = document.createElement("span");
+        name.textContent = data.username || "مستخدم NEXA";
+
+        const button = makeButton(
+            "ابدأ محادثة",
+            "start-chat-btn",
+            () => openChat(
+                item.id,
+                data.username || "مستخدم NEXA"
+            )
+        );
+
+        row.append(name, button);
+        searchResults.appendChild(row);
+    });
+
+} catch (error) {
+    console.error(error);
+
+    searchResults.textContent =
+        "حدث خطأ أثناء البحث. تحقق من قواعد Firebase.";
+
+} finally {
+    searchBtn.disabled = false;
+}
+
+}
+
+searchForm.addEventListener("submit", event => {
+event.preventDefault();
+searchUsers(searchUsername.value);
+});
+
+// فتح محادثة خاصة
+async function openChat(otherUid, otherName) {
+if (!currentUser || otherUid === currentUser.uid) return;
+
+chatStatus.textContent = "جاري فتح المحادثة...";
+
+try {
+    const chatsQuery = query(
+        collection(db, "chats"),
+        where("members", "array-contains", currentUser.uid)
+    );
+
+    const chatsSnapshot = await getDocs(chatsQuery);
+
+    const existing = chatsSnapshot.docs.find(item =>
+        item.data().members.includes(otherUid)
+    );
+
+    let chatId;
+
+    if (existing) {
+        chatId = existing.id;
+    } else {
+        const newChat = await addDoc(collection(db, "chats"), {
+            members: [currentUser.uid, otherUid],
+            createdAt: serverTimestamp()
+        });
+
+        chatId = newChat.id;
+    }
+
+    activeChatId = chatId;
+    chatTitle.textContent = otherName;
+
+    activeChat.hidden = false;
+    conversationsList.parentElement.hidden = true;
+    searchForm.parentElement.hidden = true;
+
+    chatStatus.textContent = "";
+
+    listenToMessages(chatId);
+
+} catch (error) {
+    console.error(error);
+    chatStatus.textContent =
+        "تعذر فتح المحادثة. تحقق من صلاحيات Firebase.";
+}
+
+}
+
+// تحميل المحادثات
+function listenToConversations(user) {
+if (stopChatsListener) stopChatsListener();
+
+const chatsQuery = query(
+    collection(db, "chats"),
+    where("members", "array-contains", user.uid)
+);
+
+stopChatsListener = onSnapshot(chatsQuery, async snapshot => {
+    conversationsList.replaceChildren();
+
+    if (snapshot.empty) {
+        conversationsList.textContent =
+            "لا توجد محادثات بعد. ابحث عن صديق للبدء.";
+        return;
+    }
+
+    for (const chatDoc of snapshot.docs) {
+        const members = chatDoc.data().members || [];
+        const otherUid = members.find(uid => uid !== user.uid);
+
+        if (!otherUid) continue;
+
+        try {
+            const profile = await getDoc(doc(db, "users", otherUid));
+
+            const name = profile.exists()
+                ? profile.data().username || "مستخدم NEXA"
+                : "مستخدم NEXA";
+
+            const button = makeButton(
+                name,
+                "conversation-item",
+                () => openChat(otherUid, name)
+            );
+
+            conversationsList.appendChild(button);
+
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+}, error => {
+    console.error(error);
+    conversationsList.textContent =
+        "تعذر تحميل المحادثات.";
+});
+
+}
+
+// استقبال الرسائل لحظيًا
+function listenToMessages(chatId) {
+if (stopMessagesListener) stopMessagesListener();
+
+const messagesQuery = query(
+    collection(db, "chats", chatId, "messages"),
+    orderBy("createdAt", "asc")
+);
+
+stopMessagesListener = onSnapshot(messagesQuery, snapshot => {
+    chatMessages.replaceChildren();
+
+    if (snapshot.empty) {
+        const empty = document.createElement("p");
+        empty.textContent = "ابدأ المحادثة بإرسال أول رسالة 👋";
+        chatMessages.appendChild(empty);
+        return;
+    }
+
+    snapshot.forEach(messageDoc => {
+        const data = messageDoc.data();
+
+        const bubble = document.createElement("div");
+
+        bubble.className =
+            data.senderId === currentUser.uid
+                ? "message-bubble my-message"
+                : "message-bubble received-message";
+
+        bubble.textContent = data.text || "";
+
+        chatMessages.appendChild(bubble);
+    });
+
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+}, error => {
+    console.error(error);
+    chatStatus.textContent = "تعذر تحميل الرسائل.";
+});
+
+}
+
+// إرسال رسالة
+sendMessageForm.addEventListener("submit", async event => {
+event.preventDefault();
+
+const text = messageInput.value.trim();
+
+if (!text || !activeChatId || !currentUser) return;
+
+sendBtn.disabled = true;
+chatStatus.textContent = "جاري الإرسال...";
+
+try {
+    await addDoc(
+        collection(db, "chats", activeChatId, "messages"),
+        {
+            senderId: currentUser.uid,
+            text,
+            createdAt: serverTimestamp()
+        }
+    );
+
+    messageInput.value = "";
+    chatStatus.textContent = "";
+
+} catch (error) {
+    console.error(error);
+    chatStatus.textContent =
+        "لم تُرسل الرسالة. تحقق من قواعد Firestore.";
+
+} finally {
+    sendBtn.disabled = false;
+}
+
+});
+
+// الرجوع لقائمة المحادثات
+backBtn.addEventListener("click", () => {
+activeChat.hidden = true;
+conversationsList.parentElement.hidden = false;
+searchForm.parentElement.hidden = false;
+
+activeChatId = null;
+chatStatus.textContent = "";
+
+if (stopMessagesListener) {
+    stopMessagesListener();
+    stopMessagesListener = null;
+}
+
+});
+
+// متابعة حالة تسجيل الدخول
+onAuthStateChanged(auth, user => {
+currentUser = user;
+
+if (user) {
+    authSection.hidden = true;
+    chatSection.hidden = false;
+
+    userEmail.textContent =
+        user.displayName || "مستخدم NEXA";
+
+    listenToConversations(user);
 
 } else {
     authSection.hidden = false;
     chatSection.hidden = true;
+
     userEmail.textContent = "";
+
+    if (stopChatsListener) {
+        stopChatsListener();
+        stopChatsListener = null;
+    }
+
+    if (stopMessagesListener) {
+        stopMessagesListener();
+        stopMessagesListener = null;
+    }
+
+    activeChat.hidden = true;
+    conversationsList.parentElement.hidden = false;
+    searchForm.parentElement.hidden = false;
+
+    currentUser = null;
+    activeChatId = null;
 }
 
 });
