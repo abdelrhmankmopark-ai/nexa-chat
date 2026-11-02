@@ -77,15 +77,55 @@ const sendBtn = $("sendBtn");
 const chatStatus = $("chatStatus");
 const backBtn = $("backBtn");
 
-// تبديل التسجيل والدخول
+// رسائل أخطاء Firebase
+function getErrorMessage(error) {
+const errors = {
+"auth/email-already-in-use":
+"هذا البريد مسجل بالفعل. انتقل إلى تسجيل الدخول.",
+
+    "auth/invalid-email":
+        "البريد الإلكتروني غير صحيح.",
+
+    "auth/weak-password":
+        "كلمة المرور يجب أن تكون 6 أحرف على الأقل.",
+
+    "auth/invalid-credential":
+        "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+
+    "auth/user-not-found":
+        "لا يوجد حساب بهذا البريد. أنشئ حسابًا جديدًا.",
+
+    "auth/wrong-password":
+        "كلمة المرور غير صحيحة.",
+
+    "auth/network-request-failed":
+        "مشكلة في الإنترنت. حاول مرة أخرى.",
+
+    "auth/too-many-requests":
+        "محاولات كثيرة. انتظر قليلًا ثم حاول.",
+
+    "permission-denied":
+        "تعذر حفظ البيانات. راجع قواعد Firestore.",
+
+    "auth/operation-not-allowed":
+        "تسجيل البريد الإلكتروني غير مفعّل في Firebase."
+};
+
+return errors[error.code] ||
+    error.message ||
+    "حدث خطأ غير متوقع.";
+
+}
+
+// التبديل بين التسجيل والدخول
 function showAuthMode() {
 formTitle.textContent = isRegister
-? "إنشاء حساب"
+? "إنشاء حساب جديد"
 : "تسجيل الدخول";
 
 submitBtn.textContent = isRegister
     ? "إنشاء حساب"
-    : "دخول";
+    : "تسجيل الدخول";
 
 usernameInput.hidden = !isRegister;
 usernameInput.required = isRegister;
@@ -94,22 +134,47 @@ passwordInput.autocomplete = isRegister
     ? "new-password"
     : "current-password";
 
-toggleText.innerHTML = isRegister
-    ? 'لديك حساب بالفعل؟ <a href="#" id="toggleAuth">تسجيل الدخول</a>'
-    : 'ليس لديك حساب؟ <a href="#" id="toggleAuth">إنشاء حساب</a>';
+toggleText.replaceChildren();
 
-$("toggleAuth").addEventListener("click", event => {
+const text = document.createElement("span");
+text.textContent = isRegister
+    ? "لديك حساب بالفعل؟ "
+    : "ليس لديك حساب؟ ";
+
+const link = document.createElement("a");
+link.href = "#";
+link.textContent = isRegister
+    ? "انتقل لتسجيل الدخول"
+    : "إنشاء حساب جديد";
+
+link.addEventListener("click", event => {
     event.preventDefault();
+
     isRegister = !isRegister;
+
+    authForm.reset();
     message.textContent = "";
+
     showAuthMode();
 });
+
+toggleText.append(text, link);
 
 }
 
 showAuthMode();
 
-// التسجيل والدخول
+// إنشاء أو استكمال الملف الشخصي
+async function saveUserProfile(user, username) {
+await setDoc(doc(db, "users", user.uid), {
+uid: user.uid,
+username: username,
+usernameLower: username.toLowerCase(),
+createdAt: serverTimestamp()
+}, { merge: true });
+}
+
+// التسجيل وتسجيل الدخول
 authForm.addEventListener("submit", async event => {
 event.preventDefault();
 
@@ -117,15 +182,24 @@ const email = emailInput.value.trim();
 const password = passwordInput.value;
 const username = usernameInput.value.trim();
 
+if (!email || !password) {
+    message.textContent = "أدخل البريد وكلمة المرور.";
+    return;
+}
+
+if (isRegister && (username.length < 3 || username.length > 20)) {
+    message.textContent =
+        "اسم المستخدم يجب أن يكون من 3 إلى 20 حرفًا.";
+    return;
+}
+
 submitBtn.disabled = true;
-message.textContent = "جاري التنفيذ...";
+message.textContent = isRegister
+    ? "جاري إنشاء الحساب..."
+    : "جاري تسجيل الدخول...";
 
 try {
     if (isRegister) {
-        if (username.length < 3 || username.length > 20) {
-            throw new Error("اسم المستخدم يجب أن يكون من 3 إلى 20 حرفًا.");
-        }
-
         const credential = await createUserWithEmailAndPassword(
             auth,
             email,
@@ -136,34 +210,42 @@ try {
             displayName: username
         });
 
-        await setDoc(doc(db, "users", credential.user.uid), {
-            uid: credential.user.uid,
-            username,
-            usernameLower: username.toLowerCase(),
-            createdAt: serverTimestamp()
-        });
+        try {
+            await saveUserProfile(credential.user, username);
 
-        message.textContent = "تم إنشاء الحساب بنجاح 🎉";
+            message.textContent = "تم إنشاء حسابك بنجاح 🎉";
+        } catch (profileError) {
+            console.error("Profile save error:", profileError);
+
+            message.textContent =
+                "تم إنشاء الحساب، لكن تعذر حفظ ملفك الشخصي. تحقق من قواعد Firestore.";
+        }
 
     } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        const credential = await signInWithEmailAndPassword(
+            auth,
+            email,
+            password
+        );
+
+        // استكمال الملف الشخصي لو كان غير موجود
+        const profileRef = doc(db, "users", credential.user.uid);
+        const profileSnapshot = await getDoc(profileRef);
+
+        if (!profileSnapshot.exists()) {
+            const savedName =
+                credential.user.displayName ||
+                email.split("@")[0];
+
+            await saveUserProfile(credential.user, savedName);
+        }
+
         message.textContent = "تم تسجيل الدخول بنجاح 🎉";
     }
 
 } catch (error) {
-    console.error(error);
-
-    const errors = {
-        "auth/email-already-in-use": "البريد الإلكتروني مستخدم بالفعل.",
-        "auth/invalid-email": "البريد الإلكتروني غير صحيح.",
-        "auth/weak-password": "كلمة المرور يجب أن تكون 6 أحرف على الأقل.",
-        "auth/invalid-credential": "بيانات الدخول غير صحيحة.",
-        "auth/network-request-failed": "تحقق من اتصال الإنترنت.",
-        "permission-denied": "تعذر الوصول إلى قاعدة البيانات. راجع قواعد Firestore."
-    };
-
-    message.textContent =
-        errors[error.code] || error.message || "حدث خطأ غير متوقع.";
+    console.error("Authentication error:", error);
+    message.textContent = getErrorMessage(error);
 
 } finally {
     submitBtn.disabled = false;
@@ -176,18 +258,23 @@ $("logoutBtn").addEventListener("click", async () => {
 try {
 await signOut(auth);
 } catch (error) {
+console.error(error);
 chatStatus.textContent = "تعذر تسجيل الخروج.";
 }
 });
 
-// إنشاء زر آمن
+// إنشاء زر
 function makeButton(label, className, onClick) {
 const button = document.createElement("button");
+
 button.type = "button";
 button.className = className;
 button.textContent = label;
+
 button.addEventListener("click", onClick);
+
 return button;
+
 }
 
 // البحث عن المستخدمين
@@ -220,7 +307,8 @@ try {
     );
 
     if (matches.length === 0) {
-        searchResults.textContent = "لم نعثر على مستخدم بهذا الاسم.";
+        searchResults.textContent =
+            "لم نعثر على مستخدم بهذا الاسم.";
         return;
     }
 
@@ -247,10 +335,10 @@ try {
     });
 
 } catch (error) {
-    console.error(error);
+    console.error("Search error:", error);
 
     searchResults.textContent =
-        "حدث خطأ أثناء البحث. تحقق من قواعد Firebase.";
+        "حدث خطأ أثناء البحث. تحقق من اتصال Firebase.";
 
 } finally {
     searchBtn.disabled = false;
@@ -263,7 +351,7 @@ event.preventDefault();
 searchUsers(searchUsername.value);
 });
 
-// فتح محادثة خاصة
+// فتح محادثة
 async function openChat(otherUid, otherName) {
 if (!currentUser || otherUid === currentUser.uid) return;
 
@@ -306,7 +394,8 @@ try {
     listenToMessages(chatId);
 
 } catch (error) {
-    console.error(error);
+    console.error("Open chat error:", error);
+
     chatStatus.textContent =
         "تعذر فتح المحادثة. تحقق من صلاحيات Firebase.";
 }
@@ -338,7 +427,9 @@ stopChatsListener = onSnapshot(chatsQuery, async snapshot => {
         if (!otherUid) continue;
 
         try {
-            const profile = await getDoc(doc(db, "users", otherUid));
+            const profile = await getDoc(
+                doc(db, "users", otherUid)
+            );
 
             const name = profile.exists()
                 ? profile.data().username || "مستخدم NEXA"
@@ -358,14 +449,15 @@ stopChatsListener = onSnapshot(chatsQuery, async snapshot => {
     }
 
 }, error => {
-    console.error(error);
+    console.error("Conversations error:", error);
+
     conversationsList.textContent =
         "تعذر تحميل المحادثات.";
 });
 
 }
 
-// استقبال الرسائل لحظيًا
+// استقبال الرسائل
 function listenToMessages(chatId) {
 if (stopMessagesListener) stopMessagesListener();
 
@@ -380,6 +472,7 @@ stopMessagesListener = onSnapshot(messagesQuery, snapshot => {
     if (snapshot.empty) {
         const empty = document.createElement("p");
         empty.textContent = "ابدأ المحادثة بإرسال أول رسالة 👋";
+
         chatMessages.appendChild(empty);
         return;
     }
@@ -402,7 +495,8 @@ stopMessagesListener = onSnapshot(messagesQuery, snapshot => {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
 }, error => {
-    console.error(error);
+    console.error("Messages error:", error);
+
     chatStatus.textContent = "تعذر تحميل الرسائل.";
 });
 
@@ -433,7 +527,8 @@ try {
     chatStatus.textContent = "";
 
 } catch (error) {
-    console.error(error);
+    console.error("Send message error:", error);
+
     chatStatus.textContent =
         "لم تُرسل الرسالة. تحقق من قواعد Firestore.";
 
@@ -443,9 +538,10 @@ try {
 
 });
 
-// الرجوع لقائمة المحادثات
+// الرجوع للمحادثات
 backBtn.addEventListener("click", () => {
 activeChat.hidden = true;
+
 conversationsList.parentElement.hidden = false;
 searchForm.parentElement.hidden = false;
 
@@ -459,7 +555,7 @@ if (stopMessagesListener) {
 
 });
 
-// متابعة حالة تسجيل الدخول
+// متابعة تسجيل الدخول
 onAuthStateChanged(auth, user => {
 currentUser = user;
 
@@ -468,7 +564,7 @@ if (user) {
     chatSection.hidden = false;
 
     userEmail.textContent =
-        user.displayName || "مستخدم NEXA";
+        user.displayName || user.email || "مستخدم NEXA";
 
     listenToConversations(user);
 
@@ -489,6 +585,7 @@ if (user) {
     }
 
     activeChat.hidden = true;
+
     conversationsList.parentElement.hidden = false;
     searchForm.parentElement.hidden = false;
 
